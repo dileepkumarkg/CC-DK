@@ -1,0 +1,51 @@
+name: Build and Deploy .NET Core App
+
+on:
+  push:
+    tags:
+      - 'v*' # triggers on versioned tags like v1.0.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release
+
+      - name: Publish
+        run: dotnet publish -c Release -o out
+
+      - name: Create Artifact
+        run: |
+          mkdir artifact
+          zip -r artifact/app-${{ github.ref_name }}.zip out
+
+      - name: Deploy to EC2
+        uses: appleboy/scp-action@v0.1.5
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "artifact/*.zip"
+          target: "/home/ubuntu/deployments"
+
+      - name: SSH Deploy Script
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            unzip -o /home/ubuntu/deployments/app-${{ github.ref_name }}.zip -d /var/www/mywebapp/
+            sudo systemctl restart mywebapp
